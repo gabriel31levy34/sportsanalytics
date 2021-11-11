@@ -1,3 +1,5 @@
+#Authors: Gabriel Levy and Ben Yokoyama
+
 import requests
 from bs4 import BeautifulSoup
 import random
