@@ -1,3 +1,5 @@
+#Authors: Gabriel Levy and Ben Yokoyama
+
 import time
 import random
 from selenium import webdriver
