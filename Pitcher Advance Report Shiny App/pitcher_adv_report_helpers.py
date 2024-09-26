@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 from pybaseball import statcast_pitcher, playerid_lookup, statcast
+from matplotlib.patches import Ellipse
 
 bottom_strike_zone = 1.52166
 top_strike_zone = 3.67333
@@ -138,12 +139,40 @@ def create_movement_profile(ax, data, unique_pitch_types):
     data = data[data.pitch_type.isin(reduced_pitch_types)]
     colors = plt.cm.viridis(np.linspace(0, 1, len(reduced_pitch_types)))
     color_map = dict(zip(reduced_pitch_types, colors))
-    ax.scatter(data.pfx_x, data.pfx_z, c=data['pitch_type'].map(color_map))
+    
+    # Iterate over each pitch type and plot the centroid and ellipse
+    for pitch_type in reduced_pitch_types:
+        pitch_data = data[data.pitch_type == pitch_type]
+        pitch_data = pitch_data.dropna(subset=['pfx_x', 'pfx_z'])
+        
+        # Calculate the centroid (mean) of the cluster
+        centroid_x = pitch_data.pfx_x.mean()
+        centroid_z = pitch_data.pfx_z.mean()
+        
+        # Calculate covariance for the ellipse size and orientation
+        cov_matrix = np.cov(pitch_data.pfx_x.astype(float), pitch_data.pfx_z.astype(float))
+        eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+        
+        # Get the angle and axes lengths for the ellipse
+        angle = np.degrees(np.arctan2(*eigenvectors[:, 0][::-1]))
+        width, height = 2.5 * np.sqrt(eigenvalues)  # 2 standard deviations to cover ~95% of points
+        
+        # Plot the centroid
+        ax.scatter(centroid_x, centroid_z, color=color_map[pitch_type], label=pitch_type, s=100, zorder=3)
+        
+        # Plot the ellipse
+        ellipse = Ellipse(
+            (centroid_x, centroid_z), width, height, angle=angle, 
+            edgecolor=color_map[pitch_type], facecolor='none', linewidth=2, zorder=2
+        )
+        ax.add_patch(ellipse)
+    
     ax.grid(True)
     ax.set_aspect('equal')
-    legend_labels = {ptype: color for ptype, color in zip(reduced_pitch_types, colors)}
-    markers = [plt.Line2D([0], [0], color=color, marker='o', linestyle='') for color in legend_labels.values()]
-    ax.legend(markers, legend_labels.keys(), title="Pitch Types")
+
+    # Create a legend
+    markers = [plt.Line2D([0], [0], color=color, marker='o', linestyle='', markersize=10) for color in color_map.values()]
+    ax.legend(markers, color_map.keys(), title="Pitch Types")
 
 
 ### PULL POPULATION DATA

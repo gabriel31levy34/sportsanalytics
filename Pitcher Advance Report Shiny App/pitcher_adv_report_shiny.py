@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
 import seaborn as sns
 from pybaseball import statcast_pitcher, playerid_lookup, statcast, playerid_reverse_lookup
 from matplotlib.backends.backend_pdf import PdfPages
