@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
-from pybaseball import statcast_pitcher, playerid_lookup, statcast
 from matplotlib.patches import Ellipse
 
 bottom_strike_zone = 1.52166

@@ -1,29 +1,17 @@
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Ellipse
-import seaborn as sns
-from pybaseball import statcast_pitcher, playerid_lookup, statcast, playerid_reverse_lookup
+from pybaseball import playerid_lookup, playerid_reverse_lookup
 from matplotlib.backends.backend_pdf import PdfPages
 from datetime import datetime, timedelta
 from shiny import App, render, ui
 import io
-import base64
 import tempfile
+from sqlalchemy import create_engine
+import os
 
-from pitcher_adv_report_helpers import classify_count, manip_df, apply_quantile_colormap, create_table, create_heatmap, plot_strike_zone, create_movement_profile, get_all_data, get_player_data, create_one_sheeter
+from pitcher_adv_report_helpers import classify_count, create_one_sheeter
 
 ### META INFORMATION
-start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-end_date = datetime.now().strftime("%Y-%m-%d")
-
-all_data = statcast(start_date, end_date)
-
-all_data[['pfx_x', 'pfx_z']] = all_data[['pfx_x', 'pfx_z']] * 12
-all_data.dropna(subset='pitch_type', axis=0, inplace=True)
-all_data = all_data[all_data.pitch_type != "PO"]
-all_data['qual_count'] = all_data.apply(classify_count, axis=1)
-
 bottom_strike_zone = 1.52166
 top_strike_zone = 3.67333
 left_strike_zone = -0.83083
@@ -34,6 +22,30 @@ ahead = [(2,0), (3,1), (3,0), (2,1)]
 two_k = [(0,2), (1,2), (2,2), (3,2)]
 
 target_cols = ['Pitch Type', 'Pitch%', 'Speed', 'Effective Speed', 'Spin', 'Extension', 'HB', 'VB', 'xwOBA']
+
+start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+end_date = datetime.now().strftime("%Y-%m-%d")
+
+# GET ALL DATA
+username = os.getenv('MYSQL_USER')
+password = os.getenv('MYSQL_PASSWORD')
+host = 'localhost'
+database = 'statcast'
+
+engine = create_engine(f"mysql+pymysql://{username}:{password}@{host}/{database}")
+
+all_data = pd.read_sql(
+    "SELECT * FROM statcast "
+    "WHERE game_date BETWEEN '" + start_date + "' AND '" + end_date + "' "
+    "AND pitch_type IS NOT NULL "
+    "AND pitch_type != 'PO';",
+    engine
+)
+
+engine.dispose()
+
+all_data[['pfx_x', 'pfx_z']] = all_data[['pfx_x', 'pfx_z']] * 12
+all_data['qual_count'] = all_data.apply(classify_count, axis=1)
 
 
 def server(input, output, session):
@@ -106,7 +118,7 @@ def server(input, output, session):
         return {
             "src": png_path,
             "alt": "Pitcher Report",
-            "width": "100%"  # Optionally control the width
+            "width": "100%"
         }
 
     # Provide the PDF download functionality
