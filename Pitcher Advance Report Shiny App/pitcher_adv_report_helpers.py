@@ -209,7 +209,7 @@ def create_movement_profile(ax, data, unique_pitch_types):
 
 ### PULL POPULATION DATA
 def get_all_data(batter_stand, all_data_manip):
-    print("Getting all data")
+    
     all_stand_df = all_data_manip[all_data_manip.stand == batter_stand]
     all_group_sizes = all_data_manip.groupby(['pitcher', 'pitch_type']).size().reset_index(name='num_pitches')
     all_grouped_df = all_data_manip.groupby(['pitcher', 'pitch_type'])[['release_speed', 'effective_speed', 'release_spin_rate', 'release_extension', 'pfx_x', 'pfx_z', 'estimated_woba_using_speedangle']].mean() \
@@ -219,7 +219,7 @@ def get_all_data(batter_stand, all_data_manip):
     all_grouped_df[['estimated_woba_using_speedangle']] = all_grouped_df[['estimated_woba_using_speedangle']].round(3)
 
     all_grouped_df = manip_df(all_grouped_df, None).drop(columns=['Pitch%'])
-    print("Finished getting all data")
+
     return all_stand_df, all_grouped_df
 
 def get_player_data(mlbam, all_stand_df):

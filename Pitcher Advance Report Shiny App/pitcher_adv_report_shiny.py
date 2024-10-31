@@ -3,12 +3,12 @@ import matplotlib.pyplot as plt
 from pybaseball import playerid_lookup, playerid_reverse_lookup
 from matplotlib.backends.backend_pdf import PdfPages
 from datetime import datetime, timedelta
-from shiny import App, render, ui
+from shiny import App, render, ui, reactive
 import io
 import tempfile
 from sqlalchemy import create_engine
 import os
-
+from concurrent.futures import ThreadPoolExecutor
 from pitcher_adv_report_helpers import classify_count, create_one_sheeter, all_data_query
 
 ### META INFORMATION
@@ -23,7 +23,6 @@ two_k = [(0,2), (1,2), (2,2), (3,2)]
 
 target_cols = ['Pitch Type', 'Pitch%', 'Speed', 'Effective Speed', 'Spin', 'Extension', 'HB', 'VB', 'xwOBA']
 
-
 def server(input, output, session):
     session.firstname = None
     session.lastname = None
@@ -31,13 +30,16 @@ def server(input, output, session):
     pdf_buffer = io.BytesIO()
     png_buffer = io.BytesIO()
 
+    is_data_loaded = False
     all_data = all_data_query()
+    is_data_loaded = True
 
+    # Render text to show data loading status
     @output
     @render.text
     def report_status():
-        if all_data is None:
-            return "Wait for the data to load..."
+        if not is_data_loaded:
+            return "Data loading in progress... please wait a couple minutes."
         if input.generate() == 0:
             return "Please enter a first name and last name, or MLBAM ID."
         
@@ -56,32 +58,44 @@ def server(input, output, session):
                 return "You must enter a first name and last name, or MLBAM ID."
         else:
             try:
-                session.mlbam = int(input.mlbam().strip())  # Attempt to convert to int
+                session.mlbam = int(input.mlbam().strip())
                 player = playerid_reverse_lookup([session.mlbam], key_type='mlbam').iloc[0]
                 session.firstname = player.name_first
                 session.lastname = player.name_last
             except ValueError:
                 session.mlbam = None
 
-        # Generate status report
         if (session.firstname is None or session.lastname is None) and session.mlbam is None:
             return "Please enter a first name and last name, or MLBAM ID."
         
         return f"Generating report for {session.firstname.capitalize()} {session.lastname.capitalize()}..."
 
+    # Render input UI only when data is loaded
+    @output
+    @render.ui
+    def input_ui():
+        if not is_data_loaded:
+            return None
+
+        return ui.row(
+            ui.column(3, ui.input_text("firstname", "First Name")),
+            ui.column(3, ui.input_text("lastname", "Last Name")),
+            ui.column(3, ui.input_text("mlbam", "MLBAM (Optional)")),
+            ui.column(3, ui.input_radio_buttons("batter_stand", "Batter Stand", {"R": "Right", "L": "Left"}, selected="R")),
+            ui.column(3, ui.input_action_button("generate", "Generate Report")),
+            ui.column(3, ui.output_ui("download_report_button"))
+        )
+
     @output
     @render.image
     def display_plot():
-        # Ensure report is generated when the button is pressed
-        if input.generate() == 0:
+        if input.generate() == 0 or not is_data_loaded:
             return None
 
-        # Generate and return the figure to be displayed in the plot output
         fig = create_one_sheeter(session.firstname, session.lastname, session.mlbam, input.batter_stand(), all_data)
         
         nonlocal pdf_buffer
         pdf_buffer = io.BytesIO()
-        # png_buffer = io.BytesIO()
         
         with PdfPages(pdf_buffer) as pdf:
             pdf.savefig(fig, dpi=100, bbox_inches='tight')
@@ -89,10 +103,8 @@ def server(input, output, session):
         fig.savefig(png_buffer, format="png", dpi=100, bbox_inches='tight')
         plt.close(fig)
         
-        # png_buffer.seek(0)
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
         png_path = temp_file.name
-
         fig.savefig(png_path, format="png", dpi=100, bbox_inches='tight')
         
         return {
@@ -101,53 +113,27 @@ def server(input, output, session):
             "width": "100%"
         }
 
-    # Provide the PDF download functionality
     @session.download(filename="pitcher_adv_report.pdf")
     def download_report():
         if input.generate() == 0:
             return None
         
         nonlocal pdf_buffer
-
-        # Move the buffer's cursor to the beginning so it can be read from the start
         pdf_buffer.seek(0)
-        
-        # Store the buffer for return
-        buffer = pdf_buffer
-
-        # Return the in-memory PDF buffer for download
-        return buffer
+        return pdf_buffer
 
     @output
     @render.ui
     def download_report_button():
-        if input.generate() == 0:
-            return None  # Only show download button after generating
-
-        # Provide a download button (note: no href argument here)
+        if input.generate() == 0 or not is_data_loaded:
+            return None
         return ui.download_button("download_report", "Download PDF Report")
-
 
 app_ui = ui.page_fluid(
     ui.h2("Baseball Statcast Pitcher Advance Report"),
-    
-    # Directly place the input fields in the UI
-    ui.row(
-        ui.column(3, ui.input_text("firstname", "First Name")),
-        ui.column(3, ui.input_text("lastname", "Last Name")),
-        ui.column(3, ui.input_text("mlbam", "MLBAM (Optional)")),
-        ui.column(3, ui.input_radio_buttons("batter_stand", "Batter Stand", {"R": "Right", "L": "Left"}, selected="R")),
-    ),
-    
-    # Add the action button and the download button in the same row
-    ui.row(
-        ui.column(3, ui.input_action_button("generate", "Generate Report")),
-        ui.column(3, ui.output_ui("download_report_button"))
-    ),
-    
+    ui.output_ui("input_ui"),
     ui.output_text_verbatim("report_status"),
     ui.output_plot("display_plot"),
 )
 
-    
 app = App(app_ui, server)
