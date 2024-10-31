@@ -3,7 +3,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 from matplotlib.patches import Ellipse
+import os
+from sqlalchemy import create_engine
+from datetime import datetime, timedelta
+import warnings
+warnings.filterwarnings("ignore")
 
+# META DATA FOR VISUALIZATIONS
 bottom_strike_zone = 1.52166
 top_strike_zone = 3.67333
 left_strike_zone = -0.83083
@@ -15,6 +21,15 @@ two_k = [(0,2), (1,2), (2,2), (3,2)]
 
 target_cols = ['Pitch Type', 'Pitch%', 'Speed', 'Effective Speed', 'Spin', 'Extension', 'HB', 'VB', 'xwOBA']
 
+# META DATA FOR STATCAST QUERY
+start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+end_date = datetime.now().strftime("%Y-%m-%d")
+
+username = os.getenv('MYSQL_USER')
+password = os.getenv('MYSQL_PASSWORD')
+host = 'localhost'
+database = 'statcast'
+
 def classify_count(row):
     count = (row['balls'], row['strikes'])
     if count in early:
@@ -25,6 +40,24 @@ def classify_count(row):
         return "2K"
     else:
         return np.nan
+
+def all_data_query():
+    engine = create_engine(f"mysql+pymysql://{username}:{password}@{host}/{database}")
+
+    all_data = pd.read_sql(
+        "SELECT * FROM statcast "
+        "WHERE game_date BETWEEN '" + start_date + "' AND '" + end_date + "' "
+        "AND pitch_type IS NOT NULL "
+        "AND pitch_type != 'PO';",
+        engine
+    )
+
+    engine.dispose()
+
+    all_data[['pfx_x', 'pfx_z']] = all_data[['pfx_x', 'pfx_z']] * 12
+    all_data['qual_count'] = all_data.apply(classify_count, axis=1)
+    
+    return all_data
 
 def manip_df(df, qual_count):
     if qual_count != None:
@@ -176,7 +209,7 @@ def create_movement_profile(ax, data, unique_pitch_types):
 
 ### PULL POPULATION DATA
 def get_all_data(batter_stand, all_data_manip):
-    
+    print("Getting all data")
     all_stand_df = all_data_manip[all_data_manip.stand == batter_stand]
     all_group_sizes = all_data_manip.groupby(['pitcher', 'pitch_type']).size().reset_index(name='num_pitches')
     all_grouped_df = all_data_manip.groupby(['pitcher', 'pitch_type'])[['release_speed', 'effective_speed', 'release_spin_rate', 'release_extension', 'pfx_x', 'pfx_z', 'estimated_woba_using_speedangle']].mean() \
@@ -186,7 +219,7 @@ def get_all_data(batter_stand, all_data_manip):
     all_grouped_df[['estimated_woba_using_speedangle']] = all_grouped_df[['estimated_woba_using_speedangle']].round(3)
 
     all_grouped_df = manip_df(all_grouped_df, None).drop(columns=['Pitch%'])
-    
+    print("Finished getting all data")
     return all_stand_df, all_grouped_df
 
 def get_player_data(mlbam, all_stand_df):

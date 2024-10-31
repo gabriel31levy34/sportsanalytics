@@ -9,7 +9,7 @@ import tempfile
 from sqlalchemy import create_engine
 import os
 
-from pitcher_adv_report_helpers import classify_count, create_one_sheeter
+from pitcher_adv_report_helpers import classify_count, create_one_sheeter, all_data_query
 
 ### META INFORMATION
 bottom_strike_zone = 1.52166
@@ -23,30 +23,6 @@ two_k = [(0,2), (1,2), (2,2), (3,2)]
 
 target_cols = ['Pitch Type', 'Pitch%', 'Speed', 'Effective Speed', 'Spin', 'Extension', 'HB', 'VB', 'xwOBA']
 
-start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-end_date = datetime.now().strftime("%Y-%m-%d")
-
-# GET ALL DATA
-username = os.getenv('MYSQL_USER')
-password = os.getenv('MYSQL_PASSWORD')
-host = 'localhost'
-database = 'statcast'
-
-engine = create_engine(f"mysql+pymysql://{username}:{password}@{host}/{database}")
-
-all_data = pd.read_sql(
-    "SELECT * FROM statcast "
-    "WHERE game_date BETWEEN '" + start_date + "' AND '" + end_date + "' "
-    "AND pitch_type IS NOT NULL "
-    "AND pitch_type != 'PO';",
-    engine
-)
-
-engine.dispose()
-
-all_data[['pfx_x', 'pfx_z']] = all_data[['pfx_x', 'pfx_z']] * 12
-all_data['qual_count'] = all_data.apply(classify_count, axis=1)
-
 
 def server(input, output, session):
     session.firstname = None
@@ -55,9 +31,13 @@ def server(input, output, session):
     pdf_buffer = io.BytesIO()
     png_buffer = io.BytesIO()
 
+    all_data = all_data_query()
+
     @output
     @render.text
     def report_status():
+        if all_data is None:
+            return "Wait for the data to load..."
         if input.generate() == 0:
             return "Please enter a first name and last name, or MLBAM ID."
         
